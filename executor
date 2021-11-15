@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+
+import os, sys, json, argparse, time
+import socket
+from huepy import *
+
+def usage(parser):
+    print("")
+    parser.print_help()
+    sys.exit(1)
+
+def error(msg):
+    print(bad(red(msg)))
+
+def fatal(msg):
+    error(msg)
+    sys.exit(1)
+
+class Session:
+    def __init__(self, name):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.name = name
+
+    def connect(self, host, port):
+        try:
+            remote_ip = socket.gethostbyname(host)
+        except socket.gaierror:
+            fatal("Failed to resolve hostname ({})".format(host))
+
+        print(que(yellow("Connecting to <{}> {}:{}".format(self.name, host, port))))
+        try:
+            self.sock.connect((remote_ip, port))
+        except Exception as e:
+            fatal("Connection failed to <{}> {}:{} : {}".format(self.name, host, port, e))
+
+        print(good(yellow("Connected to <{}> {}:{}".format(self.name, host, port))))
+
+    def close(self):
+        self.sock.close()
+
+    def send(self, msg):
+        print(run(blue("{} <<< {}".format(self.name, msg))))
+        msg = msg + '\n'
+        try:
+            self.sock.sendall(msg.encode())
+        except socket.error:
+            fatal("Failed to send message to {}".format(self.name))
+
+    def _recv(self):
+        total_data = []
+        data = ''
+
+        try:
+            data = self.sock.recv(8192)
+        except:
+            fatal("Failed to read message from {}".format(self.name))
+
+        msg = data.decode().strip().split('\n')
+        return msg
+
+    def _parse_response(self, v):
+        v = v.strip()
+        if v.startswith('status,RUNNING'):
+            print(good(green("{} >>> {}".format(self.name, v))))
+            return True, None
+        elif v.startswith('status,COMPLETE'):
+            print(good(green("{} >>> {}".format(self.name, v))))
+            l = len('status,COMPLETE,')
+            if len(v) > l:
+                values = v[l:].split(',')
+                i = 0
+                ret = {}
+                while (i+1) < len(values):
+                    ret[values[i]] = values[i+1]
+                    i = i + 2
+                return False, ret
+            else:
+                return False, ''
+        else:
+            fatal("{} >>> {}".format(self.name, v))
+
+    def treat(self, cmd):
+        self.send(cmd)
+
+        do_recv = True
+        while do_recv:
+            vs = self._recv()
+            for v in vs:
+                do_recv, ret = self._parse_response(v.strip())
+        return ret
+
+def _fill_cmd(cmd, cache, line_nb):
+    while '<' in cmd:
+        ph = cmd[cmd.find('<')+1:]
+        if not '>' in ph:
+            fatal("Invalid place holder at line {} ({})".format(line_nb, ph))
+        ph = ph[:ph.find('>')]
+        if not ph in cache:
+            fatal("Value for '{}' not found in cache".format(ph))
+        v = cache[ph]
+        cmd = cmd.replace('<{}>'.format(ph), v)
+    return cmd
+
+def do_main(opts):
+    peers = {}
+    peers_cache = {}
+
+    if opts.cmd_file:
+        if not os.path.exists(opts.cmd_file):
+            error("File '{}' not found".format(opts.cmd_file))
+            usage(parser)
+        cmd_file = os.path.abspath(opts.cmd_file)
+
+        with open(cmd_file, 'r') as f:
+            lines = f.readlines()
+            line_nb = 0
+            for cmd in lines:
+                line_nb = line_nb + 1
+                cmd = cmd.strip()
+                if len(cmd) == 0:
+                    continue
+                elif cmd.startswith('#'):
+                    print(info(yellow(cmd[1:].strip())))
+                elif cmd.startswith(';'):
+                    args = cmd[1:].split(',')
+                    if args[0] == 'peer':
+                        if len(args) < 4:
+                            fatal("Missing required parameters for command ({})".format(args[0]))
+                        # peer,ap,wifi.dut,9999
+                        peer_name = args[1]
+                        peer_ip = args[2]
+                        peer_port = int(args[3])
+                        s = Session(peer_name)
+                        s.connect(peer_ip, peer_port)
+                        peers[peer_name] = s
+                        peers_cache[peer_name] = {}
+                    elif args[0] == 'new_line':
+                        print()
+                    elif args[0] == 'assert' or args[0] == 'check':
+                        exit_on_error = args[0] == 'assert'
+                        if len(args) < 5:
+                            fatal("Missing required parameters for command ({})".format(args[0]))
+                        # assert,peer,op,key,value
+                        peer_name = args[1]
+                        if not peer_name in peers:
+                            fatal("Peer ({}) not found".format(peer_name))
+                        cache = peers_cache[peer_name]
+                        op = args[2]
+                        if not op in ['eq', 'lt', 'gt', 'lte', 'gte']:
+                            fatal("Unknown operation ({})".format(op))
+                        key = args[3]
+                        if not key in cache:
+                            fatal("Key ({}) not found in {}'s cache ".format(key, peer_name))
+                        value = args[4]
+                        if op == 'eq':
+                            if value != cache[key]:
+                                error("Expecting '{}' for {}[{}], found {}".format(value, peer_name, key, cache[key]))
+                                if exit_on_error:
+                                    sys.exit(1)
+                                else:
+                                    continue
+                        elif op == 'lt':
+                            if int(value) <= int(cache[key]):
+                                error("Expecting '<{}' for {}[{}], found {}".format(value, peer_name, key, cache[key]))
+                                if exit_on_error:
+                                    sys.exit(1)
+                                else:
+                                    continue
+                        elif op == 'lte':
+                            if int(value) < int(cache[key]):
+                                error("Expecting '<={}' for {}[{}], found {}".format(value, peer_name, key, cache[key]))
+                                if exit_on_error:
+                                    sys.exit(1)
+                                else:
+                                    continue
+                        elif op == 'gt':
+                            if int(value) >= int(cache[key]):
+                                error("Expecting '>{}' for {}[{}], found {}".format(value, peer_name, key, cache[key]))
+                                if exit_on_error:
+                                    sys.exit(1)
+                                else:
+                                    continue
+                        elif op == 'gte':
+                            if int(value) > int(cache[key]):
+                                error("Expecting '>={}' for {}[{}], found {}".format(value, peer_name, key, cache[key]))
+                                if exit_on_error:
+                                    sys.exit(1)
+                                else:
+                                    continue
+                    elif args[0] == 'sleep':
+                        if len(args) < 2:
+                            fatal("Missing required parameters for command ({})".format(args[0]))
+                        # sleep,2
+                        timeout = int(args[1])
+                        time.sleep(timeout)
+                    else:
+                        fatal("Unknown command ({})".format(args[0]))
+                else:
+                    if not ';' in cmd:
+                        fatal("Missing peer definition at line ({})".format(line_nb))
+                    peer_name = cmd[:cmd.find(';')]
+                    if not peer_name in peers:
+                        fatal("Peer ({}) not found".format(peer_name))
+                    cmd = cmd[cmd.find(';')+1:]
+                    if '<' in cmd:
+                        cmd = _fill_cmd(cmd, peers_cache[peer_name], line_nb)
+                    s = peers[peer_name]
+                    ret = s.treat(cmd)
+                    for k in ret:
+                        peers_cache[peer_name][k] = ret[k]
+    elif opts.cmd:
+        if opts.ip and opts.port > 0:
+            if not opts.cmd.startswith('#'):
+                s = Session()
+                s.connect(peer_ip, peer_port)
+                s.treat(opts.cmd.strip())
+        else:
+            error("Missing hostname/port")
+            usage(parser)
+
+    for peer in peers:
+        peers[peer].close()
+
+def main():
+    parser = argparse.ArgumentParser(description='Wifi-test-suite orchestrator')
+    parser.add_argument('--ip', required=False, help='Default peer IP address')
+    parser.add_argument('--port', type=int, required=False, help='Default peer TCP port')
+    parser.add_argument('-f','--cmd-file', required=False, help='Command file')
+    parser.add_argument('-c','--cmd', required=False , help='Command to execute')
+    args = parser.parse_args()
+
+    try:
+        do_main(args)
+    except Exception as e:
+        print("ERROR", e)
+        raise e
+
+if __name__ == '__main__':
+    main()
