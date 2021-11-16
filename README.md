@@ -108,6 +108,25 @@ station1;traffic_stop_ping,streamID,<streamID>
 
 In this example, the returned `streamID` from command `station1;traffic_send_ping,destination,192.168.200.1,framesize,1000,frameRate,4,duration,30` will be used as an argument for command `traffic_stop_ping`
 
+## Store
+
+`store` command, save a key, value couple to the cache. Those values may be used later as parameters for CAPI commands.
+
+**Format**
+
+```csv
+;store,peer_name,key,value
+```
+
+**Example**
+
+```sh
+station1;sta_is_connected,interface,wlan0
+;store,station1,is_connected,<connected>
+```
+
+In the example above, the value of `connected` (that is returned by `sta_is_connected` command) will be saved as *is_connected* to the cache.
+
 ## Asserts
 
 By default, the program will stop on CAPI failure.
@@ -127,7 +146,7 @@ station1;sta_is_connected,interface,wlan0
 ;assert,station1,eq,connected,1
 ```
 
-In the example above, the program will exit if connected is differnt from 1.
+In the example above, the program will exit if *connected* is differnt from 1.
 
 ### Supported operations
 
@@ -137,6 +156,24 @@ In the example above, the program will exit if connected is differnt from 1.
 * `gt` assert that the provided value is greater than the current value
 * `gte` assert that the provided value is equals or greater than the current value
 
+## Check
+
+The `check` command is the same as the `assert` one, but instead of causing the program to exit on error, it shows an error message instead.
+
+**Format**
+
+```csv
+;check,peer_name,operation,key,value
+```
+
+**Example**
+
+```sh
+station1;sta_is_connected,interface,wlan0
+;check,station1,eq,connected,1
+```
+
+In the example above, the program will display an error message *connected* is differnt from 1.
 
 # Start AP example
 

@@ -136,6 +136,17 @@ def do_main(opts):
                         peers_cache[peer_name] = {}
                     elif args[0] == 'new_line':
                         print()
+                    elif args[0] == 'store':
+                        if len(args) < 4:
+                            fatal("Missing required parameters for command ({})".format(args[0]))
+                        # store,peer,key,value
+                        peer_name = args[1]
+                        if not peer_name in peers:
+                            fatal("Peer ({}) not found".format(peer_name))
+                        cache = peers_cache[peer_name]
+                        key = args[2]
+                        value = _fill_cmd(args[3], cache, line_nb)
+                        cache[key] = value
                     elif args[0] == 'assert' or args[0] == 'check':
                         exit_on_error = args[0] == 'assert'
                         if len(args) < 5:
