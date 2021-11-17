@@ -151,6 +151,7 @@ In the example above, the program will exit if *connected* is differnt from 1.
 ### Supported operations
 
 * `eq` assert that the provided value is equals to the current value
+* `neq` assert that the provided value is not equals to the current value
 * `lt` assert that the provided value is less than the current value
 * `lte` assert that the provided value is equals or less than the current value
 * `gt` assert that the provided value is greater than the current value

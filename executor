@@ -157,7 +157,7 @@ def do_main(opts):
                             fatal("Peer ({}) not found".format(peer_name))
                         cache = peers_cache[peer_name]
                         op = args[2]
-                        if not op in ['eq', 'lt', 'gt', 'lte', 'gte']:
+                        if not op in ['eq', 'neq', 'lt', 'gt', 'lte', 'gte']:
                             fatal("Unknown operation ({})".format(op))
                         key = args[3]
                         if not key in cache:
@@ -166,6 +166,13 @@ def do_main(opts):
                         if op == 'eq':
                             if value != cache[key]:
                                 error("Expecting '{}' for {}[{}], found {}".format(value, peer_name, key, cache[key]))
+                                if exit_on_error:
+                                    sys.exit(1)
+                                else:
+                                    continue
+                        elif op == 'neq':
+                            if value == cache[key]:
+                                error("Expecting a value different from '{}' for {}[{}]".format(value, peer_name, key))
                                 if exit_on_error:
                                     sys.exit(1)
                                 else:
