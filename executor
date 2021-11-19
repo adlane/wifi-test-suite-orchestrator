@@ -249,6 +249,8 @@ def main():
 
     try:
         do_main(args)
+    except KeyboardInterrupt as e:
+        fatal('Interrupted')
     except Exception as e:
         print("ERROR", e)
         raise e
